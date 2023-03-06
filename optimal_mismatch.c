@@ -2,64 +2,143 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_TEXT_LEN 1000
-#define MAX_PATTERN_LEN 100
+#define ASIZE 256
+#define XSIZE 100
 
-// Constrói a tabela de saltos a partir do padrão
-void build_skip_table(char pattern[], int table[][MAX_PATTERN_LEN])
+typedef struct patternScanOrder
 {
-    int i, j, m = strlen(pattern);
-    // memset(table, 0, sizeof(table));
-    for (i = 0; i < m; i++)
-        for (j = m - 1; j >= 0; j--)
-            if (pattern[j] == pattern[i])
-                table[pattern[i]][j] = i - j;
-            else
-                table[pattern[j]][j] = i - j;
-    for (i = 0; i < m; i++)
-        for (j = 0; j < MAX_PATTERN_LEN; j++)
-            if (table[i][j] == 0)
-                table[i][j] = m - j - 1;
-    for (i = 0; i < m; i++)
-        for (j = m - 2; j >= 0; j--)
-            if (table[pattern[j]][j] > m - j - 1)
-                table[pattern[j]][j] = m - j - 1;
+    int loc;
+    char c;
+} pattern;
+
+int freq[ASIZE];
+
+int MAX(int n1, int n2)
+{
+    if (n1 > n2)
+        return n1;
+    return n2;
 }
 
-// Busca todas as ocorrências do padrão no texto utilizando a tabela de saltos
-void search(char text[], char pattern[], int table[][MAX_PATTERN_LEN])
+void OUTPUT(int out)
 {
-    int i, j, m = strlen(pattern), n = strlen(text);
-    i = m - 1;
-    while (i < n)
-    {
-        j = m - 1;
-        while (j >= 0 && pattern[j] == text[i - m + 1 + j])
-            j--;
-        if (j < 0)
-        {
+    printf("Posição: %d\n", out);
+}
 
-            printf("Padrão encontrado na posição %d\n", i - m + 1);
-            i++;
-        }
-        else
+void preQsBc(char *x, int m, int qsBc[])
+{
+    int i;
+
+    for (i = 0; i < ASIZE; ++i)
+        qsBc[i] = m + 1;
+    for (i = 0; i < m; ++i)
+        qsBc[x[i]] = m - i;
+}
+
+/* Construct an ordered pattern from a string. */
+void orderPattern(char *x, int m, int (*pcmp)(),
+                  pattern *pat)
+{
+    int i;
+
+    for (i = 0; i <= m; ++i)
+    {
+        pat[i].loc = i;
+        pat[i].c = x[i];
+    }
+    qsort(pat, m, sizeof(pattern), pcmp);
+}
+
+/* Optimal Mismatch pattern comparison function. */
+int optimalPcmp(pattern *pat1, pattern *pat2)
+{
+    float fx;
+
+    fx = freq[pat1->c] - freq[pat2->c];
+    return (fx ? (fx > 0 ? 1 : -1) : (pat2->loc - pat1->loc));
+}
+
+/* Find the next leftward matching shift for
+   the first ploc pattern elements after a
+   current shift or lshift. */
+int matchShift(char *x, int m, int ploc,
+               int lshift, pattern *pat)
+{
+    int i, j;
+
+    for (; lshift < m; ++lshift)
+    {
+        i = ploc;
+        while (--i >= 0)
         {
-            i += table[text[i]][j];
+            if ((j = (pat[i].loc - lshift)) < 0)
+                continue;
+            if (pat[i].c != x[j])
+                break;
         }
+        if (i < 0)
+            break;
+    }
+    return (lshift);
+}
+
+/* Constructs the good-suffix shift table
+   from an ordered string. */
+void preAdaptedGs(char *x, int m, int adaptedGs[],
+                  pattern *pat)
+{
+    int lshift, i, ploc;
+
+    adaptedGs[0] = lshift = 1;
+    for (ploc = 1; ploc <= m; ++ploc)
+    {
+        lshift = matchShift(x, m, ploc, lshift, pat);
+        adaptedGs[ploc] = lshift;
+    }
+    for (ploc = 0; ploc <= m; ++ploc)
+    {
+        lshift = adaptedGs[ploc];
+        while (lshift < m)
+        {
+            i = pat[ploc].loc - lshift;
+            if (i < 0 || pat[ploc].c != x[i])
+                break;
+            ++lshift;
+            lshift = matchShift(x, m, ploc, lshift, pat);
+        }
+        adaptedGs[ploc] = lshift;
     }
 }
 
-// Função principal
+/* Optimal Mismatch string matching algorithm. */
+void OM(char *x, int m, char *y, int n)
+{
+    int i, j, adaptedGs[XSIZE], qsBc[ASIZE];
+    pattern pat[XSIZE];
+
+    /* Preprocessing */
+    orderPattern(x, m, optimalPcmp, pat);
+    preQsBc(x, m, qsBc);
+    preAdaptedGs(x, m, adaptedGs, pat);
+
+    /* Searching */
+    j = 0;
+    while (j <= n - m)
+    {
+        i = 0;
+        while (i < m && pat[i].c == y[j + pat[i].loc])
+            ++i;
+        if (i >= m)
+            OUTPUT(j);
+        j += MAX(adaptedGs[i], qsBc[y[j + m]]);
+    }
+}
+
 int main()
 {
-    char text[MAX_TEXT_LEN], pattern[MAX_PATTERN_LEN];
-    int table[MAX_PATTERN_LEN][MAX_PATTERN_LEN];
-    printf("Digite o texto: ");
-    fgets(text, MAX_TEXT_LEN, stdin);
-    printf("Digite o padrão: ");
-    fgets(pattern, MAX_PATTERN_LEN, stdin);
-    pattern[strcspn(pattern, "\n")] = 0; // Remove o caractere de quebra de linha do padrão
-    build_skip_table(pattern, table);
-    search(text, pattern, table);
+    char *pattern = "aba";
+    char *text = "abraabaabacaba";
+    printf("Padrão '%s' nas posições:\n", pattern);
+    OM(pattern, strlen(pattern), text, strlen(text));
     return 0;
 }
